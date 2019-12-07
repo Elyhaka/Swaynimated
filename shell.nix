@@ -3,7 +3,12 @@ with import <nixpkgs> {};
 stdenv.mkDerivation rec {
   name = "rust-env";
   nativeBuildInputs = with pkgs; [
-    rustc cargo rustfmt rls pkgconfig
+    rustc
+    cargo
+    rustfmt
+    rls
+    cmake
+    pkgconfig
   ];
 
   buildInputs = with pkgs; [

@@ -7,6 +7,7 @@ edition = "2018"
 [dependencies]
 winit = "0.20.0-alpha4"
 image = "0.22.3"
+glsl-to-spirv = "0.1.7"
 
 [dependencies.wgpu]
 version = "0.4.0"
