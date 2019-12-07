@@ -12,10 +12,9 @@ fn main() {
     let surface = wgpu::Surface::create(&window);
 
     let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::LowPower,
+        power_preference: wgpu::PowerPreference::Default,
         backends: wgpu::BackendBit::PRIMARY,
-    })
-    .unwrap();
+    }).unwrap();
 
     let (device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
         extensions: wgpu::Extensions {
