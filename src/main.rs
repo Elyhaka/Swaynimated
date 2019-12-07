@@ -54,6 +54,7 @@ fn main() {
 
     let dir: Vec<_> = std::fs::read_dir(&std::path::Path::new(filePath))
         .unwrap()
+        //.take(10)
         .map(|p| p.unwrap().path())
         .collect();
     let total_frame = dir.len();
@@ -76,6 +77,7 @@ fn main() {
     });
     let texture_view = texture.create_default_view();
 
+    println!("Loading images");
     for (index, entry) in dir.iter().enumerate() {
         let img = image::open(entry).unwrap().to_rgba();
 
@@ -106,6 +108,7 @@ fn main() {
             texture_extent,
         );
         queue.submit(&[init_encoder.finish()]);
+        println!("Loaded image {:?}", index);
     }
 
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -143,6 +146,7 @@ fn main() {
         ],
     });
 
+    let mut current_frame = 0;
     let mut uniform = [0u8, 0, 0, 0];
     let uniform_buf = device
         .create_buffer_mapped(
@@ -218,6 +222,13 @@ fn main() {
 
             let mut encoder =
                 device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+
+            current_frame = (current_frame + 1) % total_frame;
+            uniform[0] = current_frame as u8;
+            let temp_buf = device
+                .create_buffer_mapped(uniform.len(), wgpu::BufferUsage::COPY_SRC)
+                .fill_from_slice(&uniform);
+            encoder.copy_buffer_to_buffer(&temp_buf, 0, &uniform_buf, 0, uniform.len() as wgpu::BufferAddress);
 
             {
                 let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
