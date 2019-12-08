@@ -44,7 +44,6 @@ fn put_to_background(window: &Window) {
 
 fn main() -> Result<(), Box<dyn Error>> {
     let opt = Opt::from_args();
-    println!("{:?}", opt);
 
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
