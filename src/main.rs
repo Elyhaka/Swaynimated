@@ -1,37 +1,35 @@
 use winit::{
-    event::{Event, WindowEvent, StartCause},
+    event::{Event, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
     platform::unix::WindowExtUnix,
-    window::WindowBuilder,
+    window::{Window, WindowBuilder},
 };
 
+use image::GenericImageView;
 use std::time::Duration;
 use std::time::Instant;
 use wayland_client::{protocol::wl_surface::WlSurface, sys::client::wl_proxy, Proxy};
-
-use image::GenericImageView;
 use wayland_protocols::wlr::unstable::layer_shell::v1::client::{
     zwlr_layer_shell_v1, zwlr_layer_surface_v1,
 };
 
-const fps: u32 = 5;
+const fps: u32 = 60;
 const filePath: &str = "/home/ely/.assets/frames/";
+
+fn put_to_background(window: &Window) {
+    let sfc = match window.wayland_surface() {
+        Some(wayland_surface) => unsafe {
+            Proxy::<WlSurface>::from_c_ptr(wayland_surface as *mut wl_proxy)
+        },
+        None => return,
+    };
+}
 
 fn main() {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
-    match window.wayland_surface() {
-        Some(wayland_surface) => {
-            let sfc = unsafe {
-                Proxy::<WlSurface>::from_c_ptr(wayland_surface as *mut wl_proxy);
-            };
-            
-            println!("Configuring wayland surface {:?}", wayland_surface);
-        }
-        None => {}
-    };
-
-    let size = window.inner_size().to_physical(window.current_monitor().hidpi_factor());
+    put_to_background(&window);
+    let size = window.inner_size().to_physical(window.hidpi_factor());
 
     let surface = wgpu::Surface::create(&window);
 
@@ -231,7 +229,7 @@ fn main() {
         sample_mask: !0,
         alpha_to_coverage_enabled: false,
     });
-    
+
     let timer_length = Duration::new(0, 1_000_000_000 / fps);
     let mut next_update = Instant::now();
 
@@ -242,19 +240,21 @@ fn main() {
         } if window_id == window.id() => *control_flow = ControlFlow::Exit,
         Event::EventsCleared => {
             *control_flow = ControlFlow::WaitUntil(next_update);
-        },
-        
-        Event::NewEvents(StartCause::WaitCancelled { requested_resume, .. }) => {
+        }
+
+        Event::NewEvents(StartCause::WaitCancelled {
+            requested_resume, ..
+        }) => {
             next_update = requested_resume.unwrap_or_else(|| Instant::now() + timer_length);
             *control_flow = ControlFlow::WaitUntil(next_update);
-        },
+        }
         Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
             next_update = Instant::now() + timer_length;
             *control_flow = ControlFlow::WaitUntil(next_update);
 
             current_frame = (current_frame + 1) % total_frame;
             window.request_redraw();
-        },
+        }
         Event::WindowEvent {
             event: WindowEvent::RedrawRequested,
             ..
@@ -293,14 +293,14 @@ fn main() {
             }
 
             queue.submit(&[encoder.finish()]);
-            
+
             *control_flow = ControlFlow::WaitUntil(next_update)
         }
         Event::WindowEvent {
             event: WindowEvent::Resized(size),
             ..
         } => {
-            let physical = size.to_physical(window.current_monitor().hidpi_factor());
+            let physical = size.to_physical(window.hidpi_factor());
             sc_desc.width = physical.width.round() as u32;
             sc_desc.height = physical.height.round() as u32;
             swap_chain = device.create_swap_chain(&surface, &sc_desc);
