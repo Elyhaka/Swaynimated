@@ -129,7 +129,7 @@ fn create_texture(
 fn load_textures(frames_path: &Path, device: &wgpu::Device, queue: &mut wgpu::Queue) -> Result<(wgpu::TextureView, u32), Box<dyn Error>> {
     info!("Loading frames into VRAM");
 
-    let mut dir: Result<Vec<_>, Box<dyn Error>> = std::fs::read_dir(frames_path)?.map(|p| Ok(p?.path())).collect();
+    let dir: Result<Vec<_>, Box<dyn Error>> = std::fs::read_dir(frames_path)?.map(|p| Ok(p?.path())).collect();
     let mut dir = dir?;
     dir.sort();
 
@@ -172,7 +172,7 @@ fn load_textures(frames_path: &Path, device: &wgpu::Device, queue: &mut wgpu::Qu
         );
         Ok(init_encoder.finish())
     });
-    let mut commands_vec: Result<Vec<_>, Box<dyn Error+Send>> = commands.collect();
+    let commands_vec: Result<Vec<_>, Box<dyn Error+Send>> = commands.collect();
     queue.submit(&commands_vec.unwrap()); // FIXME : Remove unwrap
     info!("Finished loading frames");
 
