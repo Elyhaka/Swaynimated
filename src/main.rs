@@ -1,13 +1,18 @@
 use winit::{
     event::{Event, WindowEvent, StartCause},
     event_loop::{ControlFlow, EventLoop},
+    platform::unix::WindowExtUnix,
     window::WindowBuilder,
 };
 
 use std::time::Duration;
 use std::time::Instant;
+use wayland_client::{protocol::wl_surface::WlSurface, sys::client::wl_proxy, Proxy};
 
 use image::GenericImageView;
+use wayland_protocols::wlr::unstable::layer_shell::v1::client::{
+    zwlr_layer_shell_v1, zwlr_layer_surface_v1,
+};
 
 const fps: u32 = 5;
 const filePath: &str = "/home/ely/.assets/frames/";
@@ -15,12 +20,23 @@ const filePath: &str = "/home/ely/.assets/frames/";
 fn main() {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
+    match window.wayland_surface() {
+        Some(wayland_surface) => {
+            let sfc = unsafe {
+                Proxy::<WlSurface>::from_c_ptr(wayland_surface as *mut wl_proxy);
+            };
+            
+            println!("Configuring wayland surface {:?}", wayland_surface);
+        }
+        None => {}
+    };
+
     let size = window.inner_size().to_physical(window.current_monitor().hidpi_factor());
 
     let surface = wgpu::Surface::create(&window);
 
     let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::Default,
+        power_preference: wgpu::PowerPreference::LowPower,
         backends: wgpu::BackendBit::PRIMARY,
     })
     .unwrap();
@@ -57,14 +73,13 @@ fn main() {
 
     let mut dir: Vec<_> = std::fs::read_dir(&std::path::Path::new(filePath))
         .unwrap()
-        //.take(10)
         .map(|p| p.unwrap().path())
         .collect();
 
     dir.sort();
     let total_frame = dir.len();
 
-    let img = image::open(&dir[0]).unwrap().to_rgba();
+    let img = image::open(&dir[0]).unwrap();
     let (width, height) = img.dimensions();
     let texture_extent = wgpu::Extent3d {
         width,
@@ -253,7 +268,13 @@ fn main() {
             let temp_buf = device
                 .create_buffer_mapped(uniform.len(), wgpu::BufferUsage::COPY_SRC)
                 .fill_from_slice(&uniform);
-            encoder.copy_buffer_to_buffer(&temp_buf, 0, &uniform_buf, 0, uniform.len() as wgpu::BufferAddress);
+            encoder.copy_buffer_to_buffer(
+                &temp_buf,
+                0,
+                &uniform_buf,
+                0,
+                uniform.len() as wgpu::BufferAddress,
+            );
 
             {
                 let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {

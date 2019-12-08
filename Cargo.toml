@@ -12,3 +12,11 @@ glsl-to-spirv = "0.1.7"
 [dependencies.wgpu]
 version = "0.4.0"
 features = [ "vulkan" ]
+
+[dependencies.wayland-client]
+version = "0.23.6"
+features = [ "use_system_lib" ]
+
+[dependencies.wayland-protocols]
+version = "0.23.6"
+features = [ "client", "unstable_protocols" ]
