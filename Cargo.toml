@@ -11,15 +11,7 @@ glsl-to-spirv = "0.1.7"
 rayon = "1.2.1"
 log = "0.4"
 env_logger = "0.7.1"
-
-[dependencies.wgpu]
-version = "0.4.0"
-features = [ "vulkan" ]
-
-[dependencies.wayland-client]
-version = "0.23.6"
-features = [ "native_lib" ]
-
-[dependencies.wayland-protocols]
-version = "0.23.6"
-features = [ "client", "unstable_protocols" ]
+structopt = { version = "0.3", default-features = false }
+wgpu = { version = "0.4.0", features = [ "vulkan" ] }
+wayland-client = { version = "0.23.6", features = [ "native_lib" ] }
+wayland-protocols = { version = "0.23.6", features = [ "client", "unstable_protocols" ] }

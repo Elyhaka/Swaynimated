@@ -1,6 +1,8 @@
 mod pipeline;
-
 use std::error::Error;
+use std::path::PathBuf;
+use structopt::StructOpt;
+
 use winit::{
     event::{Event, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
@@ -15,8 +17,21 @@ use wayland_protocols::wlr::unstable::layer_shell::v1::client::{
     zwlr_layer_shell_v1, zwlr_layer_surface_v1,
 };
 
-const fps: u32 = 5;
-const filePath: &str = "/home/ely/.assets/frames/";
+#[derive(Debug, StructOpt)]
+#[structopt(name = "swaynimated", about = "Animating your wlroots compositor since 2019")]
+struct Opt {
+    /// Activate debug mode
+    #[structopt(short, long)]
+    debug: bool,
+
+    /// Number of FPS for the running animation
+    #[structopt(short = "f", long = "fps", default_value = "5")]
+    fps: u32,
+
+    /// Input folder (where are the frames stored)
+    #[structopt(parse(from_os_str))]
+    frame_path: PathBuf,
+}
 
 fn put_to_background(window: &Window) {
     let sfc = match window.wayland_surface() {
@@ -28,13 +43,16 @@ fn put_to_background(window: &Window) {
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
+    let opt = Opt::from_args();
+    println!("{:?}", opt);
+
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
     put_to_background(&window);
 
-    let mut pipeline = pipeline::init(&window, filePath)?;
+    let mut pipeline = pipeline::init(&window, &opt.frame_path)?;
 
-    let timer_length = Duration::new(0, 1_000_000_000 / fps);
+    let timer_length = Duration::new(0, 1_000_000_000 / opt.fps);
     let mut next_update = Instant::now();
 
     event_loop.run(move |event, _, control_flow| match event {

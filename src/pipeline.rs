@@ -1,4 +1,5 @@
 use std::error::Error;
+use std::path::Path;
 use log::info;
 use image::GenericImageView;
 use rayon::prelude::*;
@@ -125,10 +126,10 @@ fn create_texture(
     (extent, texture)
 }
 
-fn load_textures(frames_path: &str, device: &wgpu::Device, queue: &mut wgpu::Queue) -> Result<(wgpu::TextureView, u32), Box<dyn Error>> {
+fn load_textures(frames_path: &Path, device: &wgpu::Device, queue: &mut wgpu::Queue) -> Result<(wgpu::TextureView, u32), Box<dyn Error>> {
     info!("Loading frames into VRAM");
 
-    let mut dir: Result<Vec<_>, Box<dyn Error>> = std::fs::read_dir(&std::path::Path::new(frames_path))?.map(|p| Ok(p?.path())).collect();
+    let mut dir: Result<Vec<_>, Box<dyn Error>> = std::fs::read_dir(frames_path)?.map(|p| Ok(p?.path())).collect();
     let mut dir = dir?;
     dir.sort();
 
@@ -265,7 +266,7 @@ impl Pipeline {
     }
 }
 
-pub fn init(window: &winit::window::Window, frames_path: &str) -> Result<Pipeline, Box<dyn Error>> {
+pub fn init(window: &winit::window::Window, frames_path: &Path) -> Result<Pipeline, Box<dyn Error>> {
     let surface = wgpu::Surface::create(window);
 
     let size = window.inner_size().to_physical(window.hidpi_factor());
