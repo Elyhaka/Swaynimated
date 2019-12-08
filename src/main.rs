@@ -1,18 +1,21 @@
 use winit::{
-    event::{Event, WindowEvent},
+    event::{Event, WindowEvent, StartCause},
     event_loop::{ControlFlow, EventLoop},
     window::WindowBuilder,
 };
 
+use std::time::Duration;
+use std::time::Instant;
+
 use image::GenericImageView;
 
-const fps: u64 = 5;
+const fps: u32 = 5;
 const filePath: &str = "/home/ely/.assets/frames/";
 
 fn main() {
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().build(&event_loop).unwrap();
-    let size = window.inner_size().to_physical(window.hidpi_factor());
+    let size = window.inner_size().to_physical(window.current_monitor().hidpi_factor());
 
     let surface = wgpu::Surface::create(&window);
 
@@ -52,11 +55,13 @@ fn main() {
     let frag_mod = device.create_shader_module(&frag);
     let vert_mod = device.create_shader_module(&vert);
 
-    let dir: Vec<_> = std::fs::read_dir(&std::path::Path::new(filePath))
+    let mut dir: Vec<_> = std::fs::read_dir(&std::path::Path::new(filePath))
         .unwrap()
         //.take(10)
         .map(|p| p.unwrap().path())
         .collect();
+
+    dir.sort();
     let total_frame = dir.len();
 
     let img = image::open(&dir[0]).unwrap().to_rgba();
@@ -108,7 +113,7 @@ fn main() {
             texture_extent,
         );
         queue.submit(&[init_encoder.finish()]);
-        println!("Loaded image {:?}", index);
+        println!("Loaded image {:?}: {:?}", index, entry);
     }
 
     let sampler = device.create_sampler(&wgpu::SamplerDescriptor {
@@ -211,6 +216,9 @@ fn main() {
         sample_mask: !0,
         alpha_to_coverage_enabled: false,
     });
+    
+    let timer_length = Duration::new(0, 1_000_000_000 / fps);
+    let mut next_update = Instant::now();
 
     event_loop.run(move |event, _, control_flow| match event {
         Event::WindowEvent {
@@ -218,12 +226,29 @@ fn main() {
             window_id,
         } if window_id == window.id() => *control_flow = ControlFlow::Exit,
         Event::EventsCleared => {
+            *control_flow = ControlFlow::WaitUntil(next_update);
+        },
+        
+        Event::NewEvents(StartCause::WaitCancelled { requested_resume, .. }) => {
+            next_update = requested_resume.unwrap_or_else(|| Instant::now() + timer_length);
+            *control_flow = ControlFlow::WaitUntil(next_update);
+        },
+        Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
+            next_update = Instant::now() + timer_length;
+            *control_flow = ControlFlow::WaitUntil(next_update);
+
+            current_frame = (current_frame + 1) % total_frame;
+            window.request_redraw();
+        },
+        Event::WindowEvent {
+            event: WindowEvent::RedrawRequested,
+            ..
+        } => {
             let frame = swap_chain.get_next_texture();
 
             let mut encoder =
                 device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
 
-            current_frame = (current_frame + 1) % total_frame;
             uniform[0] = current_frame as u8;
             let temp_buf = device
                 .create_buffer_mapped(uniform.len(), wgpu::BufferUsage::COPY_SRC)
@@ -247,15 +272,16 @@ fn main() {
             }
 
             queue.submit(&[encoder.finish()]);
-            std::thread::sleep(std::time::Duration::from_millis(1000 / fps));
+            
+            *control_flow = ControlFlow::WaitUntil(next_update)
         }
         Event::WindowEvent {
             event: WindowEvent::Resized(size),
             ..
         } => {
-            let physical = size.to_physical(window.hidpi_factor());
-            sc_desc.width = size.width.round() as u32;
-            sc_desc.height = size.height.round() as u32;
+            let physical = size.to_physical(window.current_monitor().hidpi_factor());
+            sc_desc.width = physical.width.round() as u32;
+            sc_desc.height = physical.height.round() as u32;
             swap_chain = device.create_swap_chain(&surface, &sc_desc);
         }
         _ => *control_flow = ControlFlow::Wait,
