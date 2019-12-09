@@ -103,7 +103,7 @@ impl Window {
                     }
                 },
             )
-                .unwrap();
+            .unwrap();
 
             if let Some(app_id) = pl_attribs.app_id {
                 frame.set_app_id(app_id);
@@ -141,7 +141,9 @@ impl Window {
             frame.set_min_size(attributes.min_inner_size.map(Into::into));
             frame.set_max_size(attributes.max_inner_size.map(Into::into));
             Some(frame)
-        } else { None };
+        } else {
+            None
+        };
 
         let kill_switch = Arc::new(Mutex::new(false));
         let need_frame_refresh = Arc::new(Mutex::new(true));
@@ -301,8 +303,8 @@ impl Window {
                     panic!("Wayland doesn't support exclusive fullscreen")
                 }
                 Some(Fullscreen::Borderless(RootMonitorHandle {
-                                                inner: PlatformMonitorHandle::Wayland(ref monitor_id),
-                                            })) => {
+                    inner: PlatformMonitorHandle::Wayland(ref monitor_id),
+                })) => {
                     frame
                         .lock()
                         .unwrap()

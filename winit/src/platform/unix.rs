@@ -14,8 +14,7 @@ use crate::{
 use crate::platform_impl::{
     x11::{ffi::XVisualInfo, XConnection},
     EventLoop as LinuxEventLoop, EventLoopWindowTarget as LinuxEventLoopWindowTarget,
-    Window as LinuxWindow,
-    MonitorHandle as LinuxMonitorHandle
+    MonitorHandle as LinuxMonitorHandle, Window as LinuxWindow,
 };
 
 // TODO: stupid hack so that glutin can do its work
@@ -477,7 +476,7 @@ impl MonitorHandleExtUnix for MonitorHandle {
     fn wayland_output(&self) -> Option<*mut raw::c_void> {
         match &self.inner {
             LinuxMonitorHandle::X(_) => None,
-            LinuxMonitorHandle::Wayland(handle) => Some(handle.proxy.as_ref().c_ptr() as *mut _), 
+            LinuxMonitorHandle::Wayland(handle) => Some(handle.proxy.as_ref().c_ptr() as *mut _),
         }
     }
 }

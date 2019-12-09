@@ -1,8 +1,16 @@
 use image::GenericImageView;
 use log::info;
 use rayon::prelude::*;
+use std::cell::RefCell;
 use std::error::Error;
 use std::path::Path;
+use std::rc::Rc;
+use winit::dpi::PhysicalSize;
+use winit::event_loop::EventLoop;
+use winit::monitor::MonitorHandle;
+use winit::platform::unix::WindowBuilderExtUnix;
+use winit::window::{Window, WindowBuilder};
+use wgpu::CommandEncoder;
 
 pub struct Pipeline {
     current_frame: u32,
@@ -13,6 +21,7 @@ pub struct Pipeline {
     render_pipeline: wgpu::RenderPipeline,
     uniform: [u8; 4],
     uniform_buf: wgpu::Buffer,
+    windows: Vec<Rc<RefCell<PipelineWindow>>>
 }
 
 fn create_shader_module(
@@ -85,14 +94,13 @@ fn get_shaders(
 fn create_swap_chain(
     device: &wgpu::Device,
     surface: &wgpu::Surface,
-    width: u32,
-    height: u32,
+    size: PhysicalSize,
 ) -> wgpu::SwapChain {
     let sc_desc = wgpu::SwapChainDescriptor {
         usage: wgpu::TextureUsage::OUTPUT_ATTACHMENT,
         format: wgpu::TextureFormat::Bgra8UnormSrgb,
-        width: width,
-        height: height,
+        width: size.width.round() as u32,
+        height: size.height.round() as u32,
         present_mode: wgpu::PresentMode::Vsync,
     };
 
@@ -226,17 +234,80 @@ fn create_pipeline(
 }
 
 impl Pipeline {
+    pub fn new<T>(event_loop: &EventLoop<T>, frames_path: &Path) -> Result<Rc<RefCell<Self>>, Box<dyn Error>> {
+        let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
+            power_preference: wgpu::PowerPreference::LowPower,
+            backends: wgpu::BackendBit::PRIMARY,
+        }).unwrap(); // FIXME: Should use Result
+
+        let (device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
+            extensions: wgpu::Extensions {
+                anisotropic_filtering: false,
+            },
+            limits: wgpu::Limits::default(),
+        });
+
+        let (texture_view, total_frame) = load_textures(frames_path, &device, &mut queue)?;
+        let sampler = create_sampler(&device);
+        let bind_group_layout = create_bind_group_layout(&device);
+        let render_pipeline = create_pipeline(&device, &bind_group_layout);
+
+        let uniform = [0u8, 0, 0, 0];
+        let uniform_buf = device
+            .create_buffer_mapped(
+                uniform.len(),
+                wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
+            )
+            .fill_from_slice(&uniform);
+
+        let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
+            layout: &bind_group_layout,
+            bindings: &[
+                wgpu::Binding {
+                    binding: 0,
+                    resource: wgpu::BindingResource::Sampler(&sampler),
+                },
+                wgpu::Binding {
+                    binding: 1,
+                    resource: wgpu::BindingResource::TextureView(&texture_view),
+                },
+                wgpu::Binding {
+                    binding: 2,
+                    resource: wgpu::BindingResource::Buffer {
+                        buffer: &uniform_buf,
+                        range: 0..4,
+                    },
+                },
+            ],
+        });
+
+        let pipeline = Rc::new(RefCell::new(Pipeline {
+            current_frame: 0,
+            total_frame,
+            device,
+            queue,
+            bind_group,
+            render_pipeline,
+            uniform,
+            uniform_buf,
+            windows: vec![]
+        }));
+
+        let windows = event_loop
+            .available_monitors()
+            .map(|monitor| PipelineWindow::new(pipeline.clone(), &event_loop, &monitor))
+            .collect();
+
+        ::std::mem::replace(&mut pipeline.borrow_mut().windows, windows);
+
+        Ok(pipeline)
+    }
+
     pub fn go_to_next_frame(&mut self) {
         self.current_frame = (self.current_frame + 1) % self.total_frame;
     }
 
-    pub fn resize(&mut self, width: u32, height: u32) {
-        self.swap_chain = create_swap_chain(&self.device, &self.surface, width, height);
-    }
-
-    pub fn render(&mut self) {
-        let frame = self.swap_chain.get_next_texture();
-
+    pub fn render<'a>(&mut self) {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
@@ -254,103 +325,66 @@ impl Pipeline {
             self.uniform.len() as wgpu::BufferAddress,
         );
 
-        {
-            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                    attachment: &frame.view,
-                    resolve_target: None,
-                    load_op: wgpu::LoadOp::Clear,
-                    store_op: wgpu::StoreOp::Store,
-                    clear_color: wgpu::Color::BLACK,
-                }],
-                depth_stencil_attachment: None,
-            });
-            rpass.set_pipeline(&self.render_pipeline);
-            rpass.set_bind_group(0, &self.bind_group, &[]);
-            rpass.draw(0..6, 0..1);
-        }
+        self.windows.iter().for_each(|w| w.borrow_mut().render(&mut encoder));
 
         self.queue.submit(&[encoder.finish()]);
+    }
+
+    pub fn request_redraw(&self) {
+        self.windows.iter().for_each(|w| w.borrow_mut().window.request_redraw());
     }
 }
 
 pub struct PipelineWindow {
+    pub(crate) window: Window,
+    pipeline: Rc<RefCell<Pipeline>>,
     swap_chain: wgpu::SwapChain,
     surface: wgpu::Surface,
 }
 
-pub fn init(
-    window: &winit::window::Window,
-    frames_path: &Path,
-) -> Result<Pipeline, Box<dyn Error>> {
-    let surface = wgpu::Surface::create(window);
+impl PipelineWindow {
+    pub fn new<T>(
+        pipeline: Rc<RefCell<Pipeline>>,
+        event_loop: &EventLoop<T>,
+        monitor: &MonitorHandle
+    ) -> Rc<RefCell<Self>> {
+        let window = WindowBuilder::new().with_shell(false).build(&event_loop).unwrap();
+        let surface = wgpu::Surface::create(&window);
+        let swap_chain = create_swap_chain(&pipeline.borrow().device, &surface, window.inner_size().to_physical(window.hidpi_factor()));
 
-    let size = window.inner_size().to_physical(window.hidpi_factor());
+        let pipeline_window = Rc::new(RefCell::new(Self {
+            pipeline,
+            window,
+            swap_chain,
+            surface,
+        }));
 
-    let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
-        power_preference: wgpu::PowerPreference::LowPower,
-        backends: wgpu::BackendBit::PRIMARY,
-    })
-    .unwrap(); // FIXME: Should use Result
+        crate::platform::put_to_background(monitor, pipeline_window.clone());
 
-    let (device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
-        extensions: wgpu::Extensions {
-            anisotropic_filtering: false,
-        },
-        limits: wgpu::Limits::default(),
-    });
+        pipeline_window
+    }
 
-    let swap_chain = create_swap_chain(
-        &device,
-        &surface,
-        size.width.round() as u32,
-        size.height.round() as u32,
-    );
+    pub fn resize(&mut self, size: PhysicalSize) {
+        self.swap_chain = create_swap_chain(&self.pipeline.borrow().device, &self.surface, size);
+    }
 
-    let (texture_view, total_frame) = load_textures(frames_path, &device, &mut queue)?;
-    let sampler = create_sampler(&device);
-    let bind_group_layout = create_bind_group_layout(&device);
-    let render_pipeline = create_pipeline(&device, &bind_group_layout);
+    fn render(&mut self, encoder: &mut CommandEncoder) {
+        let frame = self.swap_chain.get_next_texture();
 
-    let uniform = [0u8, 0, 0, 0];
-    let uniform_buf = device
-        .create_buffer_mapped(
-            uniform.len(),
-            wgpu::BufferUsage::UNIFORM | wgpu::BufferUsage::COPY_DST,
-        )
-        .fill_from_slice(&uniform);
-
-    let bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
-        layout: &bind_group_layout,
-        bindings: &[
-            wgpu::Binding {
-                binding: 0,
-                resource: wgpu::BindingResource::Sampler(&sampler),
-            },
-            wgpu::Binding {
-                binding: 1,
-                resource: wgpu::BindingResource::TextureView(&texture_view),
-            },
-            wgpu::Binding {
-                binding: 2,
-                resource: wgpu::BindingResource::Buffer {
-                    buffer: &uniform_buf,
-                    range: 0..4,
-                },
-            },
-        ],
-    });
-
-    Ok(Pipeline {
-        current_frame: 0,
-        total_frame: total_frame,
-        surface: surface,
-        device: device,
-        queue: queue,
-        swap_chain: swap_chain,
-        bind_group: bind_group,
-        render_pipeline: render_pipeline,
-        uniform: uniform,
-        uniform_buf: uniform_buf,
-    })
+        let pipeline = self.pipeline.borrow();
+        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                attachment: &frame.view,
+                resolve_target: None,
+                load_op: wgpu::LoadOp::Clear,
+                store_op: wgpu::StoreOp::Store,
+                clear_color: wgpu::Color::BLACK,
+            }],
+            depth_stencil_attachment: None,
+        });
+        rpass.set_pipeline(&pipeline.render_pipeline);
+        rpass.set_bind_group(0, &pipeline.bind_group, &[]);
+        rpass.draw(0..6, 0..1);
+    }
 }
+

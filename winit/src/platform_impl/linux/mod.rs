@@ -58,7 +58,7 @@ impl Default for PlatformSpecificWindowBuilderAttributes {
             x11_window_types: vec![XWindowType::Normal],
             gtk_theme_variant: None,
             app_id: None,
-            init_with_shell: true
+            init_with_shell: true,
         }
     }
 }
