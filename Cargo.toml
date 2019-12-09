@@ -5,9 +5,10 @@ authors = ["Elyhaka <57923898+Elyhaka@users.noreply.github.com>"]
 edition = "2018"
 
 [dependencies]
-winit = "0.20.0-alpha4"
+winit = { path = "../winit" }
 image = "0.22.3"
 glsl-to-spirv = "0.1.7"
+wayland-sys = "0.23.6"
 rayon = "1.2.1"
 log = "0.4"
 env_logger = "0.7.1"
