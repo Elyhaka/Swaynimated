@@ -1,20 +1,18 @@
+use image::GenericImageView;
+use log::info;
+use rayon::prelude::*;
 use std::error::Error;
 use std::path::Path;
-use log::info;
-use image::GenericImageView;
-use rayon::prelude::*;
 
 pub struct Pipeline {
     current_frame: u32,
     total_frame: u32,
     device: wgpu::Device,
-    surface: wgpu::Surface,
     queue: wgpu::Queue,
-    swap_chain: wgpu::SwapChain,
     bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
     uniform: [u8; 4],
-    uniform_buf: wgpu::Buffer
+    uniform_buf: wgpu::Buffer,
 }
 
 fn create_shader_module(
@@ -126,20 +124,25 @@ fn create_texture(
     (extent, texture)
 }
 
-fn load_textures(frames_path: &Path, device: &wgpu::Device, queue: &mut wgpu::Queue) -> Result<(wgpu::TextureView, u32), Box<dyn Error>> {
+fn load_textures(
+    frames_path: &Path,
+    device: &wgpu::Device,
+    queue: &mut wgpu::Queue,
+) -> Result<(wgpu::TextureView, u32), Box<dyn Error>> {
     info!("Loading frames into VRAM");
 
-    let dir: Result<Vec<_>, Box<dyn Error>> = std::fs::read_dir(frames_path)?.map(|p| Ok(p?.path())).collect();
+    let dir: Result<Vec<_>, Box<dyn Error>> = std::fs::read_dir(frames_path)?
+        .map(|p| Ok(p?.path()))
+        .collect();
     let mut dir = dir?;
     dir.sort();
 
     let total_frame = dir.len();
-    
+
     let img = image::open(&dir[0])?;
     let (width, height) = img.dimensions();
 
-    let (texture_extent, texture) =
-        create_texture(&device, width, height, total_frame as u32);
+    let (texture_extent, texture) = create_texture(&device, width, height, total_frame as u32);
 
     let commands = dir.par_iter().enumerate().map(|(index, entry)| {
         let img = image::open(entry).unwrap().to_rgba(); // FIXME : Remove unwrap
@@ -172,14 +175,17 @@ fn load_textures(frames_path: &Path, device: &wgpu::Device, queue: &mut wgpu::Qu
         );
         Ok(init_encoder.finish())
     });
-    let commands_vec: Result<Vec<_>, Box<dyn Error+Send>> = commands.collect();
+    let commands_vec: Result<Vec<_>, Box<dyn Error + Send>> = commands.collect();
     queue.submit(&commands_vec.unwrap()); // FIXME : Remove unwrap
     info!("Finished loading frames");
 
     Ok((texture.create_default_view(), total_frame as u32))
 }
 
-fn create_pipeline(device: &wgpu::Device, bind_group_layout: &wgpu::BindGroupLayout) -> wgpu::RenderPipeline {
+fn create_pipeline(
+    device: &wgpu::Device,
+    bind_group_layout: &wgpu::BindGroupLayout,
+) -> wgpu::RenderPipeline {
     let (frag, vert) = get_shaders(&device).unwrap();
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
@@ -227,15 +233,17 @@ impl Pipeline {
     pub fn resize(&mut self, width: u32, height: u32) {
         self.swap_chain = create_swap_chain(&self.device, &self.surface, width, height);
     }
-    
+
     pub fn render(&mut self) {
         let frame = self.swap_chain.get_next_texture();
 
-        let mut encoder =
-            self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
 
         self.uniform[0] = self.current_frame as u8;
-        let temp_buf = self.device
+        let temp_buf = self
+            .device
             .create_buffer_mapped(self.uniform.len(), wgpu::BufferUsage::COPY_SRC)
             .fill_from_slice(&self.uniform);
         encoder.copy_buffer_to_buffer(
@@ -266,7 +274,15 @@ impl Pipeline {
     }
 }
 
-pub fn init(window: &winit::window::Window, frames_path: &Path) -> Result<Pipeline, Box<dyn Error>> {
+pub struct PipelineWindow {
+    swap_chain: wgpu::SwapChain,
+    surface: wgpu::Surface,
+}
+
+pub fn init(
+    window: &winit::window::Window,
+    frames_path: &Path,
+) -> Result<Pipeline, Box<dyn Error>> {
     let surface = wgpu::Surface::create(window);
 
     let size = window.inner_size().to_physical(window.hidpi_factor());
@@ -274,7 +290,8 @@ pub fn init(window: &winit::window::Window, frames_path: &Path) -> Result<Pipeli
     let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
         power_preference: wgpu::PowerPreference::LowPower,
         backends: wgpu::BackendBit::PRIMARY,
-    }).unwrap(); // FIXME: Should use Result
+    })
+    .unwrap(); // FIXME: Should use Result
 
     let (device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
         extensions: wgpu::Extensions {
@@ -334,6 +351,6 @@ pub fn init(window: &winit::window::Window, frames_path: &Path) -> Result<Pipeli
         bind_group: bind_group,
         render_pipeline: render_pipeline,
         uniform: uniform,
-        uniform_buf: uniform_buf
+        uniform_buf: uniform_buf,
     })
 }
