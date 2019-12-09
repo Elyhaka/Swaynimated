@@ -33,13 +33,15 @@ struct Opt {
     frame_path: PathBuf,
 }
 use wayland_protocols::xdg_shell::client::xdg_wm_base::XdgWmBase;
-
+use std::cell::RefCell;
+use std::rc::Rc;
+use crate::pipeline::Pipeline;
 
 const fps: u32 = 60;
 const filePath: &str =
     "/home/adrien/Projects/Lenovo-NixOS-Configuration/user-configuration/dotfiles/assets/frames/";
 
-fn put_to_background(window: &Window) {
+fn put_to_background(window: &Window, pipeline: Rc<RefCell<Pipeline>>) {
     let sfc: WlSurface = match window.wayland_surface() {
         Some(wayland_surface) => unsafe {
             Proxy::<WlSurface>::from_c_ptr(wayland_surface as *mut wl_proxy)
@@ -51,61 +53,10 @@ fn put_to_background(window: &Window) {
     let display_ptr = window.wayland_display().unwrap() as _;
     let display: WlDisplay = unsafe { Proxy::from_c_ptr(display_ptr) }.into();
 
-    let mut shell: Option<(u32, u32)> = None;
-    let mut bound_registry: Option<WlRegistry> = None;
-
-    /*bound_registry = Some(display
-        .get_registry(|registry| {
-            registry.implement_closure(move |msg, _proxy| {
-                match msg {
-                    wl_registry::Event::Global {
-                        name,
-                        interface,
-                        version,
-                    } => {
-                        println!("Added  {:?}", interface);
-                        println!("Tested {:?} = {}", <zwlr_layer_shell_v1::ZwlrLayerShellV1 as Interface>::NAME, interface == <zwlr_layer_shell_v1::ZwlrLayerShellV1 as Interface>::NAME);
-                        if interface == <zwlr_layer_shell_v1::ZwlrLayerShellV1 as Interface>::NAME {
-                            println!("Added  {:?}!!!!!", interface);
-                            let shell: zwlr_layer_shell_v1::ZwlrLayerShellV1 = bound_registry.as_ref().expect("no registry").bind(version, name, |p| p.implement_dummy()).expect("bind failed");
-                            shell
-                                .get_layer_surface(
-                                    &sfc,
-                                    None,
-                                    zwlr_layer_shell_v1::Layer::Background,
-                                    "wallpaper".into(),
-                                    |p| p.implement_dummy(),
-                                )
-                                .unwrap();
-                        }
-                    },
-                    wl_registry::Event::GlobalRemove { name } => {
-                        println!("Removed {:?}", (name));
-                    },
-                    _ => {}
-                }
-
-                }, ())
-        }).unwrap());*/
-
     let manager = GlobalManager::new(&display);
 
-    println!("SYNC");
     unsafe { (wayland_sys::client::WAYLAND_CLIENT_HANDLE.wl_display_roundtrip)(display_ptr as _) };
-    println!("DONE");
 
-    /*let xdg_wm_base: XdgWmBase = manager
-        .instantiate_range(0, 42, |p| {
-            p.implement_closure(|_, _| (), ())
-        })
-        .unwrap();
-
-    let xdg_surface = xdg_wm_base.get_xdg_surface(&sfc, |p| p.implement_dummy()).unwrap();
-    let xdg_toplevel = xdg_surface.get_toplevel(|p| p.implement_dummy()).unwrap();
-    //xdg_toplevel.destroy();
-    xdg_surface.destroy();
-
-    ::std::thread::sleep_ms(5000);*/
     let shell: zwlr_layer_shell_v1::ZwlrLayerShellV1 = manager
         .instantiate_range(0, 42, |p| {
             p.implement_dummy()
@@ -117,10 +68,11 @@ fn put_to_background(window: &Window) {
         None,
         zwlr_layer_shell_v1::Layer::Background,
         "wallpaper".into(),
-        |p| p.implement_closure(|e, layer_surface| {
+        move |p| p.implement_closure(move |e, layer_surface| {
             match e {
                 zwlr_layer_surface_v1::Event::Configure { serial, width, height } => {
                     println!("{:?}", (serial, width, height));
+                    pipeline.borrow_mut().resize(width, height);
                     layer_surface.ack_configure(serial);
                 }
                 zwlr_layer_surface_v1::Event::Closed => println!("CLOSED"),
@@ -134,60 +86,7 @@ fn put_to_background(window: &Window) {
     layer_surface.set_exclusive_zone(-1);
 
     sfc.commit();
-
-    println!("SYNC3");
     unsafe { (wayland_sys::client::WAYLAND_CLIENT_HANDLE.wl_display_roundtrip)(display_ptr as _) };
-    println!("DONE3");
-
-
-    /*
-    println!("SYNC2");
-    unsafe { (wayland_sys::client::WAYLAND_CLIENT_HANDLE.wl_display_roundtrip)(display_ptr as _) };
-    println!("DONE2");*/
-
-    //::std::thread::sleep_ms(5000);
-
-    /*let shell: zwlr_layer_shell_v1::ZwlrLayerShellV1 = manager
-        .instantiate_range(0, 42, |p| {
-            p.implement_closure(|_, _| (), ())
-        })
-        .unwrap();
-
-    shell.get_layer_surface(
-            &sfc,
-            None,
-            zwlr_layer_shell_v1::Layer::Background,
-            "wallpaper".into(),
-            |p| p.implement_dummy(),
-        ).unwrap();
-
-    println!("SYNC3");
-    unsafe { (wayland_sys::client::WAYLAND_CLIENT_HANDLE.wl_display_roundtrip)(display_ptr as _) };
-    println!("DONE3");*/
-
-    println!("DONE ALL");
-
-    //registry.
-    //let (version, name) = shell.unwrap();
-    //let shell: zwlr_layer_shell_v1::ZwlrLayerShellV1 = registry.bind(0, 0, |p| p.implement_dummy()).unwrap();
-
-    /*let manager = GlobalManager::new(&display);
-    let shell: zwlr_layer_shell_v1::ZwlrLayerShellV1 = manager
-        .instantiate_range(0, 42, |p| {
-            println!("FOO");
-            p.implement_closure(|_, _| (), ())
-        })
-        .unwrap();*/
-
-    /*shell
-        .get_layer_surface(
-            &sfc,
-            None,
-            zwlr_layer_shell_v1::Layer::Background,
-            "wallpaper".into(),
-            |p| p.implement_dummy(),
-        )
-        .unwrap();*/
 }
 
 fn main() -> Result<(), Box<dyn Error>> {
@@ -195,9 +94,8 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let event_loop = EventLoop::new();
     let window = WindowBuilder::new().with_shell(false).build(&event_loop).unwrap();
-    put_to_background(&window);
-
-    let mut pipeline = pipeline::init(&window, &opt.frame_path)?;
+    let mut pipeline = Rc::new(RefCell::new(pipeline::init(&window, &opt.frame_path)?));
+    put_to_background(&window, pipeline.clone());
 
     let timer_length = Duration::new(0, 1_000_000_000 / opt.fps);
     let mut next_update = Instant::now();
@@ -222,7 +120,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
             next_update = Instant::now() + timer_length;
             *control_flow = ControlFlow::WaitUntil(next_update);
-            pipeline.go_to_next_frame();
+            pipeline.borrow_mut().go_to_next_frame();
             window.request_redraw();
         }
 
@@ -230,7 +128,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             event: WindowEvent::RedrawRequested,
             ..
         } => {
-            pipeline.render();
+            pipeline.borrow_mut().render();
             *control_flow = ControlFlow::WaitUntil(next_update)
         }
 
@@ -239,7 +137,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             ..
         } => {
             let physical = size.to_physical(window.hidpi_factor());
-            pipeline.resize(physical.width.round() as u32, physical.height.round() as u32);
+            pipeline.borrow_mut().resize(physical.width.round() as u32, physical.height.round() as u32);
         }
 
         _ => *control_flow = ControlFlow::Wait,

@@ -5,7 +5,7 @@ authors = ["Elyhaka <57923898+Elyhaka@users.noreply.github.com>"]
 edition = "2018"
 
 [dependencies]
-winit = { path = "../winit" }
+winit = { path = "./winit" }
 image = "0.22.3"
 glsl-to-spirv = "0.1.7"
 wayland-sys = "0.23.6"
