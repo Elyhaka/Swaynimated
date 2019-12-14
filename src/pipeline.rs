@@ -312,17 +312,17 @@ impl Pipeline {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
 
-        self.uniform[0] = self.current_frame as u8;
+        let uniform = self.current_frame.to_ne_bytes();
         let temp_buf = self
             .device
             .create_buffer_mapped(self.uniform.len(), wgpu::BufferUsage::COPY_SRC)
-            .fill_from_slice(&self.uniform);
+            .fill_from_slice(&uniform);
         encoder.copy_buffer_to_buffer(
             &temp_buf,
             0,
             &self.uniform_buf,
             0,
-            self.uniform.len() as wgpu::BufferAddress,
+            uniform.len() as wgpu::BufferAddress,
         );
 
         self.windows.iter().for_each(|w| w.borrow_mut().render(&mut encoder));
