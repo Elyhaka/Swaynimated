@@ -4,8 +4,8 @@ A performant animated background for wlroots (using Rust and some of the cool st
 
 ## Targeted features
 
-  - [ ] Animated background engine
-    - [ ] Loading from a folder
+  - [X] Animated background engine
+    - [X] Loading from a folder
     - [ ] Loading from a hi-def GIF (Like those made with [Gifski](https://gif.ski/))
   - [ ] IPC communication to change loaded animation
   - [ ] Systemd user unit
