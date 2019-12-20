@@ -8,14 +8,13 @@ use structopt::StructOpt;
 use winit::{
     event::{Event, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoop},
-    platform::unix::{MonitorHandleExtUnix, WindowBuilderExtUnix, WindowExtUnix},
-    window::{Window, WindowBuilder},
 };
 
 use std::time::Duration;
 use std::time::Instant;
 
-use crate::pipeline::{Pipeline};
+use crate::pipeline::{Pipeline, PipelineWindows};
+use crate::platform::CustomEvent;
 
 #[derive(Debug, StructOpt)]
 #[structopt(
@@ -39,8 +38,9 @@ struct Opt {
 fn main() -> Result<(), Box<dyn Error>> {
     let opt = Opt::from_args();
 
-    let event_loop = EventLoop::new();
-    let mut pipeline = Pipeline::new(&event_loop, &opt.frame_path)?;
+    let event_loop = EventLoop::with_user_event();
+    let mut pipeline = Pipeline::new(&opt.frame_path)?;
+    let mut windows = PipelineWindows::new(&event_loop, &pipeline);
 
     let timer_length = Duration::new(0, 1_000_000_000 / opt.fps);
     let mut next_update = Instant::now();
@@ -49,7 +49,23 @@ fn main() -> Result<(), Box<dyn Error>> {
         Event::WindowEvent {
             event: WindowEvent::CloseRequested,
             window_id,
-        } => *control_flow = ControlFlow::Exit, // TODO: Handle closing properly
+        } => {
+            windows.close(window_id);
+            if windows.is_empty() {
+                *control_flow = ControlFlow::Exit
+            }
+        },
+
+        Event::WindowEvent {
+            event: WindowEvent::Resized(new_size),
+            window_id,
+        }
+        | Event::UserEvent(CustomEvent::WindowResized {
+            new_size,
+            window_id,
+        }) => {
+            windows.find_mut(window_id).unwrap().resize(new_size, &pipeline);
+        }
 
         Event::EventsCleared => {
             *control_flow = ControlFlow::WaitUntil(next_update);
@@ -65,19 +81,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         Event::NewEvents(StartCause::ResumeTimeReached { .. }) => {
             next_update = Instant::now() + timer_length;
             *control_flow = ControlFlow::WaitUntil(next_update);
-            pipeline.borrow_mut().go_to_next_frame();
-            pipeline.borrow_mut().request_redraw();
+            pipeline.go_to_next_frame();
+            windows.request_redraw();
         }
 
         Event::WindowEvent {
             event: WindowEvent::RedrawRequested,
             ..
         } => {
-            pipeline.borrow_mut().render();
+            pipeline.update_shader_globals();
+            windows.render(&mut pipeline);
             *control_flow = ControlFlow::WaitUntil(next_update)
         }
-
-        // FIXME for xorg (and all the others): handle resize events
 
         _ => *control_flow = ControlFlow::Wait,
     });

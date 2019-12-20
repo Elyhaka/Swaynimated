@@ -1,16 +1,19 @@
 use image::GenericImageView;
 use log::info;
 use rayon::prelude::*;
-use std::cell::RefCell;
 use std::error::Error;
 use std::path::Path;
-use std::rc::Rc;
-use winit::dpi::PhysicalSize;
-use winit::event_loop::EventLoop;
-use winit::monitor::MonitorHandle;
-use winit::platform::unix::WindowBuilderExtUnix;
-use winit::window::{Window, WindowBuilder};
-use wgpu::CommandEncoder;
+
+use winit::{
+    dpi::PhysicalSize,
+    event_loop::EventLoop,
+    monitor::MonitorHandle,
+    platform::unix::WindowBuilderExtUnix,
+    window::{Window, WindowBuilder, WindowId},
+};
+
+use crate::platform::CustomEvent;
+use winit::dpi::LogicalSize;
 
 pub struct Pipeline {
     current_frame: u32,
@@ -21,7 +24,6 @@ pub struct Pipeline {
     render_pipeline: wgpu::RenderPipeline,
     uniform: [u8; 4],
     uniform_buf: wgpu::Buffer,
-    windows: Vec<Rc<RefCell<PipelineWindow>>>
 }
 
 fn create_shader_module(
@@ -234,11 +236,12 @@ fn create_pipeline(
 }
 
 impl Pipeline {
-    pub fn new<T>(event_loop: &EventLoop<T>, frames_path: &Path) -> Result<Rc<RefCell<Self>>, Box<dyn Error>> {
+    pub fn new(frames_path: &Path) -> Result<Self, Box<dyn Error>> {
         let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::LowPower,
             backends: wgpu::BackendBit::PRIMARY,
-        }).unwrap(); // FIXME: Should use Result
+        })
+        .unwrap(); // FIXME: Should use Result
 
         let (device, mut queue) = adapter.request_device(&wgpu::DeviceDescriptor {
             extensions: wgpu::Extensions {
@@ -281,7 +284,7 @@ impl Pipeline {
             ],
         });
 
-        let pipeline = Rc::new(RefCell::new(Pipeline {
+        let pipeline = Pipeline {
             current_frame: 0,
             total_frame,
             device,
@@ -290,15 +293,7 @@ impl Pipeline {
             render_pipeline,
             uniform,
             uniform_buf,
-            windows: vec![]
-        }));
-
-        let windows = event_loop
-            .available_monitors()
-            .map(|monitor| PipelineWindow::new(pipeline.clone(), &event_loop, &monitor))
-            .collect();
-
-        ::std::mem::replace(&mut pipeline.borrow_mut().windows, windows);
+        };
 
         Ok(pipeline)
     }
@@ -307,7 +302,7 @@ impl Pipeline {
         self.current_frame = (self.current_frame + 1) % self.total_frame;
     }
 
-    pub fn render<'a>(&mut self) {
+    pub fn update_shader_globals(&mut self) {
         let mut encoder = self
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
@@ -324,67 +319,107 @@ impl Pipeline {
             0,
             uniform.len() as wgpu::BufferAddress,
         );
-
-        self.windows.iter().for_each(|w| w.borrow_mut().render(&mut encoder));
-
         self.queue.submit(&[encoder.finish()]);
+    }
+}
+
+pub struct PipelineWindows {
+    windows: Vec<PipelineWindow>,
+}
+
+impl PipelineWindows {
+    pub fn new(event_loop: &EventLoop<CustomEvent>, pipeline: &Pipeline) -> Self {
+        let windows = event_loop
+            .available_monitors()
+            .map(|monitor| PipelineWindow::new(&pipeline.device, &event_loop, &monitor))
+            .collect();
+
+        Self { windows }
+    }
+
+    pub fn render(&mut self, pipeline: &mut Pipeline) {
+        self.windows.iter_mut().for_each(|w| w.render(pipeline));
+    }
+
+    pub fn find_mut(&mut self, window_id: WindowId) -> Option<&mut PipelineWindow> {
+        self.windows.iter_mut().find(|w| w.window.id() == window_id)
+    }
+
+    pub fn close(&mut self, window_id: WindowId) {
+        let (i, _) = self.windows.iter().enumerate().find(|(_, w)| w.window.id() == window_id).unwrap();
+        self.windows.swap_remove(i);
+    }
+
+    pub fn is_empty(&self) -> bool {
+        return self.windows.is_empty();
     }
 
     pub fn request_redraw(&self) {
-        self.windows.iter().for_each(|w| w.borrow_mut().window.request_redraw());
+        self.windows.iter().for_each(|w| w.window.request_redraw());
     }
 }
 
 pub struct PipelineWindow {
     pub(crate) window: Window,
-    pipeline: Rc<RefCell<Pipeline>>,
     swap_chain: wgpu::SwapChain,
     surface: wgpu::Surface,
 }
 
 impl PipelineWindow {
-    pub fn new<T>(
-        pipeline: Rc<RefCell<Pipeline>>,
-        event_loop: &EventLoop<T>,
-        monitor: &MonitorHandle
-    ) -> Rc<RefCell<Self>> {
-        let window = WindowBuilder::new().with_shell(false).build(&event_loop).unwrap();
+    pub fn new(
+        device: &wgpu::Device,
+        event_loop: &EventLoop<crate::platform::CustomEvent>,
+        monitor: &MonitorHandle,
+    ) -> Self {
+        let window = WindowBuilder::new()
+            .with_shell(false)
+            .build(&event_loop)
+            .unwrap();
         let surface = wgpu::Surface::create(&window);
-        let swap_chain = create_swap_chain(&pipeline.borrow().device, &surface, window.inner_size().to_physical(window.hidpi_factor()));
+        let swap_chain = create_swap_chain(
+            device,
+            &surface,
+            window.inner_size().to_physical(window.hidpi_factor()),
+        );
 
-        let pipeline_window = Rc::new(RefCell::new(Self {
-            pipeline,
+        let pipeline_window = Self {
             window,
             swap_chain,
             surface,
-        }));
+        };
 
-        crate::platform::put_to_background(monitor, pipeline_window.clone());
-
+        crate::platform::put_to_background(monitor, event_loop, &pipeline_window);
         pipeline_window
     }
 
-    pub fn resize(&mut self, size: PhysicalSize) {
-        self.swap_chain = create_swap_chain(&self.pipeline.borrow().device, &self.surface, size);
+    pub fn resize(&mut self, size: LogicalSize, pipeline: &Pipeline) {
+        let size = size.to_physical(self.window.hidpi_factor());
+        self.swap_chain = create_swap_chain(&pipeline.device, &self.surface, size);
+        self.window.request_redraw();
     }
 
-    fn render(&mut self, encoder: &mut CommandEncoder) {
+    fn render(&mut self, pipeline: &mut Pipeline) {
         let frame = self.swap_chain.get_next_texture();
+        let mut encoder = pipeline
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
 
-        let pipeline = self.pipeline.borrow();
-        let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
-            color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
-                attachment: &frame.view,
-                resolve_target: None,
-                load_op: wgpu::LoadOp::Clear,
-                store_op: wgpu::StoreOp::Store,
-                clear_color: wgpu::Color::BLACK,
-            }],
-            depth_stencil_attachment: None,
-        });
-        rpass.set_pipeline(&pipeline.render_pipeline);
-        rpass.set_bind_group(0, &pipeline.bind_group, &[]);
-        rpass.draw(0..6, 0..1);
+        {
+            let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                color_attachments: &[wgpu::RenderPassColorAttachmentDescriptor {
+                    attachment: &frame.view,
+                    resolve_target: None,
+                    load_op: wgpu::LoadOp::Clear,
+                    store_op: wgpu::StoreOp::Store,
+                    clear_color: wgpu::Color::BLACK,
+                }],
+                depth_stencil_attachment: None,
+            });
+            rpass.set_pipeline(&pipeline.render_pipeline);
+            rpass.set_bind_group(0, &pipeline.bind_group, &[]);
+            rpass.draw(0..6, 0..1);
+        }
+
+        pipeline.queue.submit(&[encoder.finish()]);
     }
 }
-
