@@ -33,11 +33,17 @@ pub struct Pipeline {
 fn create_shader_module(
     device: &wgpu::Device,
     code: &str,
-    shader_type: glsl_to_spirv::ShaderType,
+    shader_type: shaderc::ShaderKind,
 ) -> Result<wgpu::ShaderModule, Box<dyn Error>> {
-    let compiled = glsl_to_spirv::compile(code, shader_type)?;
-    let spirv = wgpu::read_spirv(compiled)?;
-    Ok(device.create_shader_module(&spirv))
+    let mut compiler = shaderc::Compiler::new().unwrap();
+    let options = shaderc::CompileOptions::new().unwrap();
+
+    let binary_result = compiler.compile_into_spirv(
+        code, shader_type,
+        "file.glsl", "main", Some(&options)
+    ).unwrap();
+
+    Ok(device.create_shader_module(binary_result.as_binary()))
 }
 
 fn create_sampler(device: &wgpu::Device) -> wgpu::Sampler {
@@ -85,13 +91,13 @@ fn get_shaders(
     let frag = create_shader_module(
         &device,
         include_str!("shaders/frag.glsl"),
-        glsl_to_spirv::ShaderType::Fragment,
+        shaderc::ShaderKind::Fragment,
     )?;
 
     let vert = create_shader_module(
         &device,
         include_str!("shaders/vert.glsl"),
-        glsl_to_spirv::ShaderType::Vertex,
+        shaderc::ShaderKind::Vertex,
     )?;
 
     Ok((frag, vert))

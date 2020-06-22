@@ -2,6 +2,7 @@ with import <nixpkgs> {};
 
 stdenv.mkDerivation rec {
   name = "rust-env";
+
   nativeBuildInputs = with pkgs; [
     rustc
     cargo
@@ -9,6 +10,7 @@ stdenv.mkDerivation rec {
     rls
     cmake
     pkgconfig
+    python3
   ];
 
   buildInputs = with pkgs; [
@@ -23,6 +25,7 @@ stdenv.mkDerivation rec {
     xorg.libxcb
     xorg.libXxf86vm
     vulkan-loader
+    shaderc
   ];
 
   LD_LIBRARY_PATH = "${lib.makeLibraryPath buildInputs}";
