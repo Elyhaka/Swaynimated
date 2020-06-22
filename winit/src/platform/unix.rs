@@ -393,6 +393,9 @@ pub trait WindowBuilderExtUnix {
 
     /// TODO: docs
     fn with_shell(self, has_shell: bool) -> Self;
+
+    /// TODO: docs
+    fn disable_input_region(self, disable_input_region: bool) -> Self;
 }
 
 impl WindowBuilderExtUnix for WindowBuilder {
@@ -454,6 +457,12 @@ impl WindowBuilderExtUnix for WindowBuilder {
     #[inline]
     fn with_shell(mut self, has_shell: bool) -> Self {
         self.platform_specific.init_with_shell = has_shell;
+        self
+    }
+
+    #[inline]
+    fn disable_input_region(mut self, disable_input_region: bool) -> Self {
+        self.platform_specific.disable_input_region = disable_input_region;
         self
     }
 }

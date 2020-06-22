@@ -44,6 +44,7 @@ pub struct PlatformSpecificWindowBuilderAttributes {
     pub gtk_theme_variant: Option<String>,
     pub app_id: Option<String>,
     pub init_with_shell: bool,
+    pub disable_input_region: bool,
 }
 
 impl Default for PlatformSpecificWindowBuilderAttributes {
@@ -59,6 +60,7 @@ impl Default for PlatformSpecificWindowBuilderAttributes {
             gtk_theme_variant: None,
             app_id: None,
             init_with_shell: true,
+            disable_input_region: false,
         }
     }
 }

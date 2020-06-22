@@ -1,9 +1,5 @@
 use wayland_client::{
-    protocol::{
-        wl_display::WlDisplay,
-        wl_output::WlOutput,
-        wl_surface::WlSurface,
-    },
+    protocol::{wl_display::WlDisplay, wl_output::WlOutput, wl_surface::WlSurface},
     sys::client::wl_proxy,
     GlobalManager, Proxy,
 };
@@ -17,7 +13,7 @@ use winit::dpi::LogicalSize;
 use winit::window::WindowId;
 use winit::{
     event_loop::EventLoop,
-    platform::unix::{MonitorHandleExtUnix, WindowExtUnix}
+    platform::unix::{MonitorHandleExtUnix, WindowExtUnix},
 };
 
 #[derive(Debug)]

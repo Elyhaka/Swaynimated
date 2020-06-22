@@ -112,6 +112,7 @@
 
 #![deny(rust_2018_idioms)]
 #![deny(intra_doc_link_resolution_failure)]
+#![allow(clippy::all)]
 
 #[allow(unused_imports)]
 #[macro_use]

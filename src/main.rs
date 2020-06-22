@@ -1,3 +1,5 @@
+#![deny(clippy::all, clippy::pedantic)]
+
 mod pipeline;
 mod platform;
 
@@ -54,7 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             if windows.is_empty() {
                 *control_flow = ControlFlow::Exit
             }
-        },
+        }
 
         Event::WindowEvent {
             event: WindowEvent::Resized(new_size),
@@ -64,7 +66,10 @@ fn main() -> Result<(), Box<dyn Error>> {
             new_size,
             window_id,
         }) => {
-            windows.find_mut(window_id).unwrap().resize(new_size, &pipeline);
+            windows
+                .find_mut(window_id)
+                .unwrap()
+                .resize(new_size, &pipeline);
         }
 
         Event::EventsCleared => {

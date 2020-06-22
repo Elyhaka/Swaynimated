@@ -20,7 +20,7 @@ use crate::{
 use smithay_client_toolkit::{
     output::OutputMgr,
     reexports::client::{
-        protocol::{wl_seat, wl_surface},
+        protocol::{wl_compositor, wl_seat, wl_surface},
         Display,
     },
     surface::{get_dpi_factor, get_outputs},
@@ -41,6 +41,14 @@ pub struct Window {
     need_refresh: Arc<Mutex<bool>>,
     fullscreen: Arc<Mutex<bool>>,
     cursor_grab_changed: Arc<Mutex<Option<bool>>>, // Update grab state
+}
+
+fn disable_input_region(surface: &wl_surface::WlSurface, compositor: &wl_compositor::WlCompositor) {
+    let input_region = compositor
+        .create_region(|new_region| new_region.implement_dummy())
+        .unwrap();
+    surface.set_input_region(Some(&input_region));
+    input_region.destroy();
 }
 
 impl Window {
@@ -144,6 +152,10 @@ impl Window {
         } else {
             None
         };
+
+        if pl_attribs.disable_input_region {
+            disable_input_region(&surface, &evlp.env.compositor);
+        }
 
         let kill_switch = Arc::new(Mutex::new(false));
         let need_frame_refresh = Arc::new(Mutex::new(true));

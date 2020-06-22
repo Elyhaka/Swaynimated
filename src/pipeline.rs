@@ -346,7 +346,12 @@ impl PipelineWindows {
     }
 
     pub fn close(&mut self, window_id: WindowId) {
-        let (i, _) = self.windows.iter().enumerate().find(|(_, w)| w.window.id() == window_id).unwrap();
+        let (i, _) = self
+            .windows
+            .iter()
+            .enumerate()
+            .find(|(_, w)| w.window.id() == window_id)
+            .unwrap();
         self.windows.swap_remove(i);
     }
 
@@ -373,6 +378,7 @@ impl PipelineWindow {
     ) -> Self {
         let window = WindowBuilder::new()
             .with_shell(false)
+            .disable_input_region(true)
             .build(&event_loop)
             .unwrap();
         let surface = wgpu::Surface::create(&window);
