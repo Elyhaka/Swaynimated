@@ -401,8 +401,6 @@ impl Pipeline {
         if self.current_interpolated_frame == 0 {
             self.pass_next_frame = true;
         }
-
-        println!("{:?}, {:?}, {:?}", self.previous_frame, self.current_frame, self.mix_percent);
     }
 
     pub fn update_shader_globals(&mut self) {
