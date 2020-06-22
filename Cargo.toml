@@ -16,3 +16,4 @@ structopt = { version = "0.3", default-features = false }
 wgpu = { version = "0.4.0", features = [ "vulkan" ] }
 wayland-client = { version = "0.23.6", features = [ "native_lib" ] }
 wayland-protocols = { version = "0.23.6", features = [ "client", "unstable_protocols" ] }
+natord = "1.0.9"

@@ -145,7 +145,10 @@ fn load_textures(
         .map(|p| Ok(p?.path()))
         .collect();
     let mut dir = dir?;
-    dir.sort();
+    dir.sort_by(|a, b| natord::compare(
+        a.file_name().unwrap().to_str().unwrap(),
+        b.file_name().unwrap().to_str().unwrap()
+    ));
 
     let total_frame = dir.len();
 
