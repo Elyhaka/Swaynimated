@@ -1,3 +1,4 @@
+use crate::Opt;
 use image::RgbaImage;
 use image::GenericImageView;
 use log::info;
@@ -21,12 +22,17 @@ use winit::dpi::LogicalSize;
 
 pub struct Pipeline {
     current_frame: u32,
+    previous_frame: u32,
+    mix_percent: u32,
     total_frame: u32,
+    current_interpolated_frame: u32,
+    modulo_interpolated_frame: u32,
+    pass_next_frame: bool,
     device: wgpu::Device,
     queue: wgpu::Queue,
     bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
-    uniform: [u8; 4],
+    uniform: [u8; 12],
     uniform_buf: wgpu::Buffer,
 }
 
@@ -312,7 +318,7 @@ fn create_pipeline(
 }
 
 impl Pipeline {
-    pub fn new(frames_path: &Path) -> Result<Self, Box<dyn Error>> {
+    pub fn new(options: &Opt) -> Result<Self, Box<dyn Error>> {
         let adapter = wgpu::Adapter::request(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::LowPower,
             backends: wgpu::BackendBit::PRIMARY,
@@ -326,12 +332,12 @@ impl Pipeline {
             limits: wgpu::Limits::default(),
         });
 
-        let (texture_view, total_frame) = load_textures(frames_path, &device, &mut queue)?;
+        let (texture_view, total_frame) = load_textures(&options.frame_path, &device, &mut queue)?;
         let sampler = create_sampler(&device);
         let bind_group_layout = create_bind_group_layout(&device);
         let render_pipeline = create_pipeline(&device, &bind_group_layout);
 
-        let uniform = [0u8, 0, 0, 0];
+        let uniform = [0u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
         let uniform_buf = device
             .create_buffer_mapped(
                 uniform.len(),
@@ -354,15 +360,22 @@ impl Pipeline {
                     binding: 2,
                     resource: wgpu::BindingResource::Buffer {
                         buffer: &uniform_buf,
-                        range: 0..4,
+                        range: 0..12,
                     },
                 },
             ],
         });
 
+        let modulo_interpolated_frame = options.rendered_fps / options.fps;
+
         let pipeline = Pipeline {
-            current_frame: 0,
+            previous_frame: 0,
+            current_frame: 1,
+            mix_percent: 0,
             total_frame,
+            current_interpolated_frame: 0,
+            pass_next_frame: false,
+            modulo_interpolated_frame,
             device,
             queue,
             bind_group,
@@ -375,7 +388,21 @@ impl Pipeline {
     }
 
     pub fn go_to_next_frame(&mut self) {
-        self.current_frame = (self.current_frame + 1) % self.total_frame;
+        self.mix_percent = ((self.current_interpolated_frame as f32 / self.modulo_interpolated_frame as f32) * 100.0) as u32;
+        self.current_interpolated_frame = (self.current_interpolated_frame + 1) % self.modulo_interpolated_frame;
+
+        if self.pass_next_frame {
+            self.mix_percent = 0;
+            self.previous_frame = self.current_frame;
+            self.current_frame = (self.current_frame + 1) % self.total_frame;
+            self.pass_next_frame = false;
+        }
+
+        if self.current_interpolated_frame == 0 {
+            self.pass_next_frame = true;
+        }
+
+        println!("{:?}, {:?}, {:?}", self.previous_frame, self.current_frame, self.mix_percent);
     }
 
     pub fn update_shader_globals(&mut self) {
@@ -383,11 +410,17 @@ impl Pipeline {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
 
-        let uniform = self.current_frame.to_ne_bytes();
+        let uniform = [
+            self.current_frame.to_ne_bytes(),
+            self.previous_frame.to_ne_bytes(),
+            self.mix_percent.to_ne_bytes()
+        ].concat();
+
         let temp_buf = self
             .device
             .create_buffer_mapped(self.uniform.len(), wgpu::BufferUsage::COPY_SRC)
             .fill_from_slice(&uniform);
+
         encoder.copy_buffer_to_buffer(
             &temp_buf,
             0,

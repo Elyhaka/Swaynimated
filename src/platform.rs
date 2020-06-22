@@ -69,7 +69,6 @@ pub fn put_to_background(
                                 width,
                                 height,
                             } => {
-                                println!("{:?}", (serial, width, height));
                                 let new_size = LogicalSize::new(width as f64, height as f64);
                                 event_proxy
                                     .send_event(CustomEvent::WindowResized {

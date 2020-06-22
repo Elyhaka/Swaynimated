@@ -21,16 +21,30 @@ use crate::platform::CustomEvent;
 #[derive(Debug, StructOpt)]
 #[structopt(
     name = "swaynimated",
-    about = "Animating your wlroots compositor since 2019"
+    about = "Animating your wl-roots compositor since 2019"
 )]
-struct Opt {
+pub struct Opt {
     /// Activate debug mode
     #[structopt(short, long)]
     debug: bool,
 
-    /// Number of FPS for the running animation
-    #[structopt(short = "f", long = "fps", default_value = "5")]
+    /// Key frames per second
+    #[structopt(
+        short = "f",
+        long = "fps",
+        default_value = "5",
+        help = "The number of frame per second of the animation"
+    )]
     fps: u32,
+
+    /// Number of rendered FPS (with interpolation)
+    #[structopt(
+        short = "r",
+        long = "rendered_fps",
+        default_value = "25",
+        help = "The number of frame rendered (interpolate with mix between frames). To disable put the same as the number of frame."
+    )]
+    rendered_fps: u32,
 
     /// Input folder (where are the frames stored)
     #[structopt(parse(from_os_str))]
@@ -41,10 +55,10 @@ fn main() -> Result<(), Box<dyn Error>> {
     let opt = Opt::from_args();
 
     let event_loop = EventLoop::with_user_event();
-    let mut pipeline = Pipeline::new(&opt.frame_path)?;
+    let mut pipeline = Pipeline::new(&opt)?;
     let mut windows = PipelineWindows::new(&event_loop, &pipeline);
 
-    let timer_length = Duration::new(0, 1_000_000_000 / opt.fps);
+    let timer_length = Duration::new(0, 1_000_000_000 / opt.rendered_fps);
     let mut next_update = Instant::now();
 
     event_loop.run(move |event, _, control_flow| match event {
@@ -99,6 +113,6 @@ fn main() -> Result<(), Box<dyn Error>> {
             *control_flow = ControlFlow::WaitUntil(next_update)
         }
 
-        _ => *control_flow = ControlFlow::Wait,
+        _ => *control_flow = ControlFlow::WaitUntil(next_update),
     });
 }
