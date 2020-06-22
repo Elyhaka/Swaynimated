@@ -6,7 +6,7 @@ edition = "2018"
 
 [dependencies]
 winit = { path = "./winit" }
-image = "0.22.3"
+image = "0.23.6"
 glsl-to-spirv = "0.1.7"
 wayland-sys = "0.23.6"
 rayon = "1.2.1"

@@ -1,7 +1,11 @@
+use image::RgbaImage;
 use image::GenericImageView;
 use log::info;
 use rayon::prelude::*;
 use std::error::Error;
+use std::fs::File;
+use image::gif::{GifDecoder};
+use image::{ImageDecoder, AnimationDecoder};
 use std::path::Path;
 
 use winit::{
@@ -139,33 +143,36 @@ fn load_textures(
     device: &wgpu::Device,
     queue: &mut wgpu::Queue,
 ) -> Result<(wgpu::TextureView, u32), Box<dyn Error>> {
-    info!("Loading frames into VRAM");
+    let pathmd = std::fs::metadata(frames_path).unwrap();
 
-    let dir: Result<Vec<_>, Box<dyn Error>> = std::fs::read_dir(frames_path)?
-        .map(|p| Ok(p?.path()))
-        .collect();
-    let mut dir = dir?;
-    dir.sort_by(|a, b| natord::compare(
-        a.file_name().unwrap().to_str().unwrap(),
-        b.file_name().unwrap().to_str().unwrap()
-    ));
+    if pathmd.is_dir() {
+        return load_textures_from_path(frames_path, device, queue)
+    } else if pathmd.is_file() {
+        return load_textures_from_gif(frames_path, device, queue)
+    } else {
+        panic!()
+    }
+}
 
-    let total_frame = dir.len();
-
-    let img = image::open(&dir[0])?;
-    let (width, height) = img.dimensions();
+fn load_textures_in_gpu(
+    frames: &Vec<&RgbaImage>,
+    total_frame: usize,
+    width: u32,
+    height: u32,
+    device: &wgpu::Device,
+    queue: &mut wgpu::Queue,
+) -> (wgpu::Texture, usize) {
+    info!("Loading frames");
 
     let (texture_extent, texture) = create_texture(&device, width, height, total_frame as u32);
 
-    let commands = dir.par_iter().enumerate().map(|(index, entry)| {
-        let img = image::open(entry).unwrap().to_rgba(); // FIXME : Remove unwrap
-
+    let commands = frames.par_iter().enumerate().map(|(index, frame)| {
         let mut init_encoder =
             device.create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
 
         let temp_buf = device
-            .create_buffer_mapped(img.len(), wgpu::BufferUsage::COPY_SRC)
-            .fill_from_slice(&img);
+            .create_buffer_mapped(frame.len(), wgpu::BufferUsage::COPY_SRC)
+            .fill_from_slice(&frame);
 
         init_encoder.copy_buffer_to_texture(
             wgpu::BufferCopyView {
@@ -191,6 +198,66 @@ fn load_textures(
     let commands_vec: Result<Vec<_>, Box<dyn Error + Send>> = commands.collect();
     queue.submit(&commands_vec.unwrap()); // FIXME : Remove unwrap
     info!("Finished loading frames");
+
+    return (texture, total_frame)
+}
+
+fn load_textures_from_gif(
+    gif_path: &Path,
+    device: &wgpu::Device,
+    queue: &mut wgpu::Queue,
+) -> Result<(wgpu::TextureView, u32), Box<dyn Error>> 
+{
+    let file_in = File::open(gif_path)?;
+    let decoder = GifDecoder::new(file_in).unwrap();
+    let (width, height) = decoder.dimensions();
+    let frames = decoder.into_frames().collect_frames().expect("error decoding gif");
+    let rgba_frames: Vec<_> = frames.par_iter().map(|frame| frame.buffer()).collect();
+
+    let (texture, total_frame) = load_textures_in_gpu(
+        &rgba_frames,
+        frames.len(),
+        width,
+        height,
+        device,
+        queue
+    );
+
+    Ok((texture.create_default_view(), total_frame as u32))
+}
+
+fn load_textures_from_path(
+    frames_path: &Path,
+    device: &wgpu::Device,
+    queue: &mut wgpu::Queue,
+) -> Result<(wgpu::TextureView, u32), Box<dyn Error>> 
+{
+    let dir: Result<Vec<_>, Box<dyn Error>> = std::fs::read_dir(frames_path)?
+        .map(|p| Ok(p?.path()))
+        .collect();
+    let mut dir = dir?;
+    dir.sort_by(|a, b| natord::compare(
+        a.file_name().unwrap().to_str().unwrap(),
+        b.file_name().unwrap().to_str().unwrap()
+    ));
+
+    let img = image::open(&dir[0])?;
+    let (width, height) = img.dimensions();
+
+    let rgba_frames: Vec<_> = dir.par_iter().map(|entry|
+        image::open(entry).unwrap().to_rgba()
+    ).collect();
+
+    let rgba_frames: Vec<_> = rgba_frames.par_iter().map(|i| i).collect();
+
+    let (texture, total_frame) = load_textures_in_gpu(
+        &rgba_frames,
+        dir.len(),
+        width,
+        height,
+        device,
+        queue
+    );
 
     Ok((texture.create_default_view(), total_frame as u32))
 }

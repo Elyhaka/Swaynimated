@@ -1,12 +1,12 @@
 # Swaynimated
 
-A performant animated background for wlroots (using Rust and some of the cool stuff available).
+Animated backgrounds for wlroots (using the GPU instead of the CPU).
 
 ## Targeted features
 
   - [X] Animated background engine
     - [X] Loading from a folder
-    - [ ] Loading from a hi-def GIF (Like those made with [Gifski](https://gif.ski/))
+    - [X] Loading from a hi-def GIF (Like those made with [Gifski](https://gif.ski/))
   - [ ] IPC communication to change loaded animation
   - [ ] Systemd user unit
   - [ ] Proper Nix packages
