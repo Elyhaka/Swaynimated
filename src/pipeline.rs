@@ -23,7 +23,7 @@ use winit::dpi::LogicalSize;
 pub struct Pipeline {
     current_frame: u32,
     previous_frame: u32,
-    mix_percent: u32,
+    mix_percent: f32,
     total_frame: u32,
     current_interpolated_frame: u32,
     modulo_interpolated_frame: u32,
@@ -337,7 +337,11 @@ impl Pipeline {
         let bind_group_layout = create_bind_group_layout(&device);
         let render_pipeline = create_pipeline(&device, &bind_group_layout);
 
-        let uniform = [0u8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let uniform = [
+            0u8, 0, 0, 0,
+            0, 0, 0, 0,
+            0, 0, 0, 0
+        ];
         let uniform_buf = device
             .create_buffer_mapped(
                 uniform.len(),
@@ -371,7 +375,7 @@ impl Pipeline {
         let pipeline = Pipeline {
             previous_frame: 0,
             current_frame: 1,
-            mix_percent: 0,
+            mix_percent: 0.0,
             total_frame,
             current_interpolated_frame: 0,
             pass_next_frame: false,
@@ -388,11 +392,11 @@ impl Pipeline {
     }
 
     pub fn go_to_next_frame(&mut self) {
-        self.mix_percent = ((self.current_interpolated_frame as f32 / self.modulo_interpolated_frame as f32) * 100.0) as u32;
+        self.mix_percent = self.current_interpolated_frame as f32 / self.modulo_interpolated_frame as f32;
         self.current_interpolated_frame = (self.current_interpolated_frame + 1) % self.modulo_interpolated_frame;
 
         if self.pass_next_frame {
-            self.mix_percent = 0;
+            self.mix_percent = 0.0;
             self.previous_frame = self.current_frame;
             self.current_frame = (self.current_frame + 1) % self.total_frame;
             self.pass_next_frame = false;
@@ -411,7 +415,7 @@ impl Pipeline {
         let uniform = [
             self.current_frame.to_ne_bytes(),
             self.previous_frame.to_ne_bytes(),
-            self.mix_percent.to_ne_bytes()
+            self.mix_percent.to_le_bytes()
         ].concat();
 
         let temp_buf = self

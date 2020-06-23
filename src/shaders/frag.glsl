@@ -7,7 +7,7 @@ layout(set = 0, binding = 1) uniform texture2DArray t_Color;
 layout(set = 0, binding = 2) uniform Locals {
     uint layer;
     uint previousLayer;
-    uint mixPercent;
+    float mixValue;
 };
 
 void main() {
@@ -20,6 +20,6 @@ void main() {
             sampler2DArray(t_Color, s_Color),
             vec3(v_TexCoord, layer)
         ),
-        mixPercent / 100.0
+        mixValue
     );
 }
