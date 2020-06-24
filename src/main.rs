@@ -24,20 +24,17 @@ use crate::platform::CustomEvent;
     about = "Animating your wl-roots compositor since 2019"
 )]
 pub struct Opt {
-    /// Activate debug mode
-    #[structopt(short, long)]
+    #[structopt(short, long, help = "Enabled debug (verbose) output")]
     debug: bool,
 
-    /// Key frames per second
     #[structopt(
         short = "f",
         long = "fps",
         default_value = "5",
-        help = "The number of frame per second of the animation"
+        help = "The number of frame per second of the animation."
     )]
     fps: u32,
 
-    /// Number of rendered FPS (with interpolation)
     #[structopt(
         short = "r",
         long = "rendered_fps",
@@ -46,7 +43,13 @@ pub struct Opt {
     )]
     rendered_fps: u32,
 
-    /// Input folder (where are the frames stored)
+    #[structopt(
+        short = "g",
+        long = "custom_fragment",
+        help = "Custom GLSL fragment to use instead of the default one."
+    )]
+    custom_fragment: Option<PathBuf>,
+
     #[structopt(parse(from_os_str))]
     frame_path: PathBuf,
 }

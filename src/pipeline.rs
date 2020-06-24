@@ -1,3 +1,4 @@
+use std::path::PathBuf;
 use crate::Opt;
 use image::RgbaImage;
 use image::GenericImageView;
@@ -8,6 +9,8 @@ use std::fs::File;
 use image::gif::{GifDecoder};
 use image::{ImageDecoder, AnimationDecoder};
 use std::path::Path;
+use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use winit::{
     dpi::PhysicalSize,
@@ -24,6 +27,8 @@ pub struct Pipeline {
     position: f32,
     total_frame: u32,
     increment: f32,
+    use_timestamp: bool,
+    started_at: SystemTime,
     device: wgpu::Device,
     queue: wgpu::Queue,
     bind_group: wgpu::BindGroup,
@@ -34,14 +39,14 @@ pub struct Pipeline {
 
 fn create_shader_module(
     device: &wgpu::Device,
-    code: &str,
+    code: String,
     shader_type: shaderc::ShaderKind,
 ) -> Result<wgpu::ShaderModule, Box<dyn Error>> {
     let mut compiler = shaderc::Compiler::new().unwrap();
     let options = shaderc::CompileOptions::new().unwrap();
 
     let binary_result = compiler.compile_into_spirv(
-        code, shader_type,
+        &code, shader_type,
         "file.glsl", "main", Some(&options)
     ).unwrap();
 
@@ -89,16 +94,22 @@ fn create_bind_group_layout(device: &wgpu::Device) -> wgpu::BindGroupLayout {
 
 fn get_shaders(
     device: &wgpu::Device,
+    custom_fragment: &Option<PathBuf>,
 ) -> Result<(wgpu::ShaderModule, wgpu::ShaderModule), Box<dyn Error>> {
+    let frag_code = match custom_fragment {
+        Some(path) => fs::read_to_string(path).expect("Cannot find custom shader"),
+        None => String::from(include_str!("shaders/frag.glsl"))
+    };
+
     let frag = create_shader_module(
         &device,
-        include_str!("shaders/frag.glsl"),
+        frag_code,
         shaderc::ShaderKind::Fragment,
     )?;
 
     let vert = create_shader_module(
         &device,
-        include_str!("shaders/vert.glsl"),
+        String::from(include_str!("shaders/vert.glsl")),
         shaderc::ShaderKind::Vertex,
     )?;
 
@@ -273,8 +284,9 @@ fn load_textures_from_path(
 fn create_pipeline(
     device: &wgpu::Device,
     bind_group_layout: &wgpu::BindGroupLayout,
+    custom_fragment: &Option<PathBuf>,
 ) -> wgpu::RenderPipeline {
-    let (frag, vert) = get_shaders(&device).unwrap();
+    let (frag, vert) = get_shaders(&device, custom_fragment).unwrap();
 
     let pipeline_layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
         bind_group_layouts: &[&bind_group_layout],
@@ -331,10 +343,9 @@ impl Pipeline {
         let (texture_view, total_frame) = load_textures(&options.frame_path, &device, &mut queue)?;
         let sampler = create_sampler(&device);
         let bind_group_layout = create_bind_group_layout(&device);
-        let render_pipeline = create_pipeline(&device, &bind_group_layout);
+        let render_pipeline = create_pipeline(&device, &bind_group_layout, &options.custom_fragment);
 
         let tframes = total_frame.to_ne_bytes();
-
         let uniform = [
             tframes[0], tframes[1], tframes[2], tframes[3],
             0, 0, 0, 0
@@ -372,6 +383,8 @@ impl Pipeline {
             position: 0.0,
             total_frame,
             increment: options.fps as f32 / options.rendered_fps as f32,
+            use_timestamp: options.custom_fragment.is_some(),
+            started_at: SystemTime::now(),
             device,
             queue,
             bind_group,
@@ -384,7 +397,15 @@ impl Pipeline {
     }
 
     pub fn go_to_next_frame(&mut self) {
-        self.position = (self.position + self.increment) % self.total_frame as f32;
+        self.position = if self.use_timestamp {
+                            let current = SystemTime::now();
+                            let since_the_epoch = current
+                                .duration_since(self.started_at)
+                                .expect("Time went backwards");
+                            since_the_epoch.as_secs_f32()
+                        } else {
+                            (self.position + self.increment) % self.total_frame as f32
+                        };
     }
 
     pub fn update_shader_globals(&mut self) {

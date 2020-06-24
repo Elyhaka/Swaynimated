@@ -1,13 +1,17 @@
 # Swaynimated
 
-Animated backgrounds for wlroots (using the GPU instead of the CPU).
+Animated backgrounds for wl-roots (using the GPU instead of the CPU)
 
-## Targeted features
+## Features
 
-  - [X] Animated background engine
-    - [X] Loading from a folder
-    - [X] Loading from a GIF
-  - [ ] IPC communication to change loaded animation
-  - [ ] Systemd user unit
-  - [ ] Proper Nix packages
-  - [ ] Proper Archlinux/AUR packages
+ - Displaying GIF as wallpaper
+ - Displaying list of images (in a folder) as an animated wallpaper
+ - Loading custom GLSL scripts wallpaper
+ - Interpolation between gif frames
+
+## Feature target
+
+ - IPC communication to change loaded animation
+ - Custom interpolation functions
+ - Lot of cool things I want to try
+
