@@ -21,18 +21,14 @@ use crate::platform::CustomEvent;
 use winit::dpi::LogicalSize;
 
 pub struct Pipeline {
-    current_frame: u32,
-    previous_frame: u32,
-    mix_percent: f32,
+    position: f32,
     total_frame: u32,
-    current_interpolated_frame: u32,
-    modulo_interpolated_frame: u32,
-    pass_next_frame: bool,
+    increment: f32,
     device: wgpu::Device,
     queue: wgpu::Queue,
     bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
-    uniform: [u8; 12],
+    uniform: [u8; 8],
     uniform_buf: wgpu::Buffer,
 }
 
@@ -337,11 +333,13 @@ impl Pipeline {
         let bind_group_layout = create_bind_group_layout(&device);
         let render_pipeline = create_pipeline(&device, &bind_group_layout);
 
+        let tframes = total_frame.to_ne_bytes();
+
         let uniform = [
-            0u8, 0, 0, 0,
-            0, 0, 0, 0,
+            tframes[0], tframes[1], tframes[2], tframes[3],
             0, 0, 0, 0
         ];
+
         let uniform_buf = device
             .create_buffer_mapped(
                 uniform.len(),
@@ -364,22 +362,16 @@ impl Pipeline {
                     binding: 2,
                     resource: wgpu::BindingResource::Buffer {
                         buffer: &uniform_buf,
-                        range: 0..12,
+                        range: 0..8,
                     },
                 },
             ],
         });
 
-        let modulo_interpolated_frame = options.rendered_fps / options.fps;
-
         let pipeline = Pipeline {
-            previous_frame: 0,
-            current_frame: 1,
-            mix_percent: 0.0,
+            position: 0.0,
             total_frame,
-            current_interpolated_frame: 0,
-            pass_next_frame: false,
-            modulo_interpolated_frame,
+            increment: options.fps as f32 / options.rendered_fps as f32,
             device,
             queue,
             bind_group,
@@ -392,19 +384,7 @@ impl Pipeline {
     }
 
     pub fn go_to_next_frame(&mut self) {
-        self.mix_percent = self.current_interpolated_frame as f32 / self.modulo_interpolated_frame as f32;
-        self.current_interpolated_frame = (self.current_interpolated_frame + 1) % self.modulo_interpolated_frame;
-
-        if self.pass_next_frame {
-            self.mix_percent = 0.0;
-            self.previous_frame = self.current_frame;
-            self.current_frame = (self.current_frame + 1) % self.total_frame;
-            self.pass_next_frame = false;
-        }
-
-        if self.current_interpolated_frame == 0 {
-            self.pass_next_frame = true;
-        }
+        self.position = (self.position + self.increment) % self.total_frame as f32;
     }
 
     pub fn update_shader_globals(&mut self) {
@@ -413,9 +393,8 @@ impl Pipeline {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
 
         let uniform = [
-            self.current_frame.to_ne_bytes(),
-            self.previous_frame.to_ne_bytes(),
-            self.mix_percent.to_le_bytes()
+            self.total_frame.to_ne_bytes(),
+            self.position.to_le_bytes()
         ].concat();
 
         let temp_buf = self
