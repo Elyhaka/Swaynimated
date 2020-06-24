@@ -1,27 +1,30 @@
-use std::path::PathBuf;
-use crate::Opt;
-use image::RgbaImage;
-use image::GenericImageView;
-use log::info;
-use rayon::prelude::*;
-use std::error::Error;
-use std::fs::File;
-use image::gif::{GifDecoder};
-use image::{ImageDecoder, AnimationDecoder};
-use std::path::Path;
-use std::fs;
-use std::time::{SystemTime, UNIX_EPOCH};
-
+use crate::{
+    Opt,
+    platform::CustomEvent
+};
+use image::{
+    gif::GifDecoder,
+    GenericImageView,
+    RgbaImage,
+    AnimationDecoder,
+    ImageDecoder
+};
+use std::{
+    error::Error,
+    fs,
+    fs::File,
+    path::{Path, PathBuf},
+    time::SystemTime
+};
 use winit::{
-    dpi::PhysicalSize,
+    dpi::{PhysicalSize, LogicalSize},
     event_loop::EventLoop,
     monitor::MonitorHandle,
     platform::unix::WindowBuilderExtUnix,
     window::{Window, WindowBuilder, WindowId},
 };
-
-use crate::platform::CustomEvent;
-use winit::dpi::LogicalSize;
+use log::info;
+use rayon::prelude::*;
 
 pub struct Pipeline {
     position: f32,
@@ -33,7 +36,7 @@ pub struct Pipeline {
     queue: wgpu::Queue,
     bind_group: wgpu::BindGroup,
     render_pipeline: wgpu::RenderPipeline,
-    uniform: [u8; 8],
+    uniform: Vec<u8>,
     uniform_buf: wgpu::Buffer,
 }
 
@@ -45,10 +48,9 @@ fn create_shader_module(
     let mut compiler = shaderc::Compiler::new().unwrap();
     let options = shaderc::CompileOptions::new().unwrap();
 
-    let binary_result = compiler.compile_into_spirv(
-        &code, shader_type,
-        "file.glsl", "main", Some(&options)
-    ).unwrap();
+    let binary_result = compiler
+        .compile_into_spirv(&code, shader_type, "file.glsl", "main", Some(&options))
+        .unwrap();
 
     Ok(device.create_shader_module(binary_result.as_binary()))
 }
@@ -98,14 +100,10 @@ fn get_shaders(
 ) -> Result<(wgpu::ShaderModule, wgpu::ShaderModule), Box<dyn Error>> {
     let frag_code = match custom_fragment {
         Some(path) => fs::read_to_string(path).expect("Cannot find custom shader"),
-        None => String::from(include_str!("shaders/frag.glsl"))
+        None => String::from(include_str!("shaders/frag.glsl")),
     };
 
-    let frag = create_shader_module(
-        &device,
-        frag_code,
-        shaderc::ShaderKind::Fragment,
-    )?;
+    let frag = create_shader_module(&device, frag_code, shaderc::ShaderKind::Fragment)?;
 
     let vert = create_shader_module(
         &device,
@@ -165,11 +163,9 @@ fn load_textures(
     let pathmd = std::fs::metadata(frames_path).unwrap();
 
     if pathmd.is_dir() {
-        return load_textures_from_path(frames_path, device, queue)
-    } else if pathmd.is_file() {
-        return load_textures_from_gif(frames_path, device, queue)
+        load_textures_from_path(frames_path, device, queue)
     } else {
-        panic!()
+        load_textures_from_gif(frames_path, device, queue)
     }
 }
 
@@ -218,29 +214,25 @@ fn load_textures_in_gpu(
     queue.submit(&commands_vec.unwrap()); // FIXME : Remove unwrap
     info!("Finished loading frames");
 
-    return (texture, total_frame)
+    return (texture, total_frame);
 }
 
 fn load_textures_from_gif(
     gif_path: &Path,
     device: &wgpu::Device,
     queue: &mut wgpu::Queue,
-) -> Result<(wgpu::TextureView, u32), Box<dyn Error>> 
-{
+) -> Result<(wgpu::TextureView, u32), Box<dyn Error>> {
     let file_in = File::open(gif_path)?;
     let decoder = GifDecoder::new(file_in).unwrap();
     let (width, height) = decoder.dimensions();
-    let frames = decoder.into_frames().collect_frames().expect("error decoding gif");
+    let frames = decoder
+        .into_frames()
+        .collect_frames()
+        .expect("error decoding gif");
     let rgba_frames: Vec<_> = frames.par_iter().map(|frame| frame.buffer()).collect();
 
-    let (texture, total_frame) = load_textures_in_gpu(
-        &rgba_frames,
-        frames.len(),
-        width,
-        height,
-        device,
-        queue
-    );
+    let (texture, total_frame) =
+        load_textures_in_gpu(&rgba_frames, frames.len(), width, height, device, queue);
 
     Ok((texture.create_default_view(), total_frame as u32))
 }
@@ -249,34 +241,30 @@ fn load_textures_from_path(
     frames_path: &Path,
     device: &wgpu::Device,
     queue: &mut wgpu::Queue,
-) -> Result<(wgpu::TextureView, u32), Box<dyn Error>> 
-{
+) -> Result<(wgpu::TextureView, u32), Box<dyn Error>> {
     let dir: Result<Vec<_>, Box<dyn Error>> = std::fs::read_dir(frames_path)?
         .map(|p| Ok(p?.path()))
         .collect();
     let mut dir = dir?;
-    dir.sort_by(|a, b| natord::compare(
-        a.file_name().unwrap().to_str().unwrap(),
-        b.file_name().unwrap().to_str().unwrap()
-    ));
+    dir.sort_by(|a, b| {
+        natord::compare(
+            a.file_name().unwrap().to_str().unwrap(),
+            b.file_name().unwrap().to_str().unwrap(),
+        )
+    });
 
     let img = image::open(&dir[0])?;
     let (width, height) = img.dimensions();
 
-    let rgba_frames: Vec<_> = dir.par_iter().map(|entry|
-        image::open(entry).unwrap().to_rgba()
-    ).collect();
+    let rgba_frames: Vec<_> = dir
+        .par_iter()
+        .map(|entry| image::open(entry).unwrap().to_rgba())
+        .collect();
 
     let rgba_frames: Vec<_> = rgba_frames.par_iter().map(|i| i).collect();
 
-    let (texture, total_frame) = load_textures_in_gpu(
-        &rgba_frames,
-        dir.len(),
-        width,
-        height,
-        device,
-        queue
-    );
+    let (texture, total_frame) =
+        load_textures_in_gpu(&rgba_frames, dir.len(), width, height, device, queue);
 
     Ok((texture.create_default_view(), total_frame as u32))
 }
@@ -343,13 +331,10 @@ impl Pipeline {
         let (texture_view, total_frame) = load_textures(&options.frame_path, &device, &mut queue)?;
         let sampler = create_sampler(&device);
         let bind_group_layout = create_bind_group_layout(&device);
-        let render_pipeline = create_pipeline(&device, &bind_group_layout, &options.custom_fragment);
+        let render_pipeline =
+            create_pipeline(&device, &bind_group_layout, &options.custom_fragment);
 
-        let tframes = total_frame.to_ne_bytes();
-        let uniform = [
-            tframes[0], tframes[1], tframes[2], tframes[3],
-            0, 0, 0, 0
-        ];
+        let uniform = [total_frame.to_ne_bytes(), [0u8, 0, 0, 0]].concat();
 
         let uniform_buf = device
             .create_buffer_mapped(
@@ -398,14 +383,13 @@ impl Pipeline {
 
     pub fn go_to_next_frame(&mut self) {
         self.position = if self.use_timestamp {
-                            let current = SystemTime::now();
-                            let since_the_epoch = current
-                                .duration_since(self.started_at)
-                                .expect("Time went backwards");
-                            since_the_epoch.as_secs_f32()
-                        } else {
-                            (self.position + self.increment) % self.total_frame as f32
-                        };
+            SystemTime::now()
+                .duration_since(self.started_at)
+                .expect("Time went backwards")
+                .as_secs_f32()
+        } else {
+            (self.position + self.increment) % self.total_frame as f32
+        };
     }
 
     pub fn update_shader_globals(&mut self) {
@@ -413,10 +397,7 @@ impl Pipeline {
             .device
             .create_command_encoder(&wgpu::CommandEncoderDescriptor { todo: 0 });
 
-        let uniform = [
-            self.total_frame.to_ne_bytes(),
-            self.position.to_le_bytes()
-        ].concat();
+        let uniform = [self.total_frame.to_ne_bytes(), self.position.to_le_bytes()].concat();
 
         let temp_buf = self
             .device
